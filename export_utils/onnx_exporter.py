@@ -1,13 +1,18 @@
-from transformers import PegasusConfig, PegasusForConditionalGeneration
+from transformers import (PegasusConfig, 
+                          PegasusForConditionalGeneration,
+                          BartConfig,
+                          BartForConditionalGeneration)
 from export_model_structure import BrioEncoder, BrioDecoderLMHead, BrioDecoderLMHeadInitial
+from onnxruntime.quantization import quantize_dynamic, QuantType
+from typing import Union, Iterable
 import torch
-import os
 from pathlib import Path
 from progress.bar import Bar
 import functools
 import operator
+import os
 
-def turn_model_into_encoder_decoder(model: PegasusForConditionalGeneration):
+def turn_model_into_encoder_decoder(model: Union[PegasusForConditionalGeneration, BartForConditionalGeneration] = None):
     encoder = model.get_encoder()
     decoder = model.get_decoder()
     lm_head = model.get_output_embeddings()
@@ -20,16 +25,24 @@ def turn_model_into_encoder_decoder(model: PegasusForConditionalGeneration):
     return simplified_encoder, decoder_with_lm_head, decoder_with_lm_head_init
 
 def export_to_onnx(
-    model_checkpoint=None,
-    output_path=None,
+    model_checkpoint: str = None,
+    output_path: str = None,
     input_sequence_length=256,
     onnx_opset_version=12,
+    pegasus=True
 ):
 
-    print("Loading model checkpoint...")
-    model = PegasusForConditionalGeneration.from_pretrained(model_checkpoint)
-    model_config = PegasusConfig.from_pretrained(model_checkpoint)
-    print("Model checkpoint loaded")
+    if pegasus:
+        print("Loading model checkpoint...")
+        model = PegasusForConditionalGeneration.from_pretrained(model_checkpoint)
+        model_config = PegasusConfig.from_pretrained(model_checkpoint)
+        print("Model checkpoint loaded")
+
+    else:
+        print("Loading model checkpoint...")
+        model = BartForConditionalGeneration.from_pretrained(model_checkpoint)
+        model_config = BartConfig.from_pretrained(model_checkpoint)
+        print("Model checkpoint loaded")
 
     simplified_encoder, decoder_with_lm_head, decoder_with_lm_head_init = turn_model_into_encoder_decoder(model)
     output_path = Path(output_path)
@@ -169,7 +182,9 @@ def export_to_onnx(
 
     return encoder_path, decoder_path, init_decoder_path
 
-def get_model_paths(model_checkpoint, model_path, quantized):
+def get_model_paths(model_checkpoint: str = None, 
+                    model_path: Path = None, 
+                    quantized=True):
 
     model_path.mkdir(parents=True, exist_ok=True)
 
@@ -195,16 +210,15 @@ def get_model_paths(model_checkpoint, model_path, quantized):
 
     return encoder_path, decoder_path, init_decoder_path
 
-def quantize(models_name_or_path):
+def quantize(onnx_model_paths: Iterable[Path] = None):
     """
     https://github.com/microsoft/onnxruntime/blob/main/onnxruntime/python/tools/quantization/quantize.py
     """
-    from onnxruntime.quantization import quantize_dynamic, QuantType
 
     bar = Bar("Quantizing...", max=3)
 
     quant_model_paths = []
-    for model in models_name_or_path:
+    for model in onnx_model_paths:
         model_name = model.as_posix()
         output_model_name = f"{model_name[:-5]}-quantized.onnx"
         quantize_dynamic(
@@ -221,3 +235,22 @@ def quantize(models_name_or_path):
     bar.finish()
 
     return tuple(quant_model_paths)
+
+if __name__ == '__main__':
+
+    pegasus_checkpoint = 'Yale-LILY/brio-xsum-cased' 
+    bart_checkpoint = 'Yale-LILY/brio-cnndm-uncased'
+
+    pegasus_output = '../models/pegasus'
+    bart_output = '..models/bart'
+
+    pegasus_onnx_paths = export_to_onnx(pegasus_checkpoint, output_path=pegasus_output)
+    bart_onnx_paths = export_to_onnx(bart_checkpoint, output_path=bart_output)
+    quantized_pegasus_paths = quantize(pegasus_onnx_paths)
+    quantized_bart_paths = quantize(bart_onnx_paths)'
+
+    print(f"Quantized BRIO-Pegasus ONNX models at : {quantized_pegasus_paths}")
+    print(f"Quantized BRIO-Bart models at : {quantized_bart_paths}")
+
+
+
