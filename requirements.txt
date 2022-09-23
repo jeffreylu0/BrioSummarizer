@@ -6,3 +6,5 @@ sentencepiece
 onnx
 onnxruntime
 torch
+progress
+spacy
