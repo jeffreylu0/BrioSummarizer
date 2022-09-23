@@ -1,0 +1,8 @@
+fastapi
+pydantic
+transformers==4.10.0
+uvicorn
+sentencepiece
+onnx
+onnxruntime
+torch
