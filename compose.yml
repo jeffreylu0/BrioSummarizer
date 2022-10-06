@@ -1,0 +1,13 @@
+services:
+  summarizer:
+    image: summarizer
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - KMP_DUPLICATE_LIB_OK=True
+    platform: linux/amd64
+    volumes:
+      - type: bind
+        source: /Users/623257/Projects/Summarizer/models
+        target: /usr/code/models
