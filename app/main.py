@@ -4,25 +4,43 @@ from pydantic import BaseModel, Field
 from spacy.lang.en import English
 from onnx_inference import BrioOnnxPipeline
 from enum import Enum
+from pathlib import Path
+from utils.download_models import download
 import uvicorn
 import time
 import os
 
-bart_model_paths = ['./models/bart/brio-cnndm-uncased-encoder-quantized.onnx',
-                        './models/bart/brio-cnndm-uncased-decoder-quantized.onnx', 
-                        './models/bart/brio-cnndm-uncased-init-decoder-quantized.onnx']
+# Use local model checkpoints or not
+local = False
 
-pegasus_model_paths = ['./models/pegasus/brio-xsum-cased-encoder-quantized.onnx',
-                        './models/pegasus/brio-xsum-cased-decoder-quantized.onnx', 
-                        './models/pegasus/brio-xsum-cased-init-decoder-quantized.onnx']
+# Model paths
+model_dir = Path.cwd().parent / "models"
+pegasus_model_paths = [model_dir / 'brio-cnndm-uncased-encoder-quantized.onnx',
+                       model_dir / 'brio-cnndm-uncased-decoder-quantized.onnx', 
+                       model_dir / 'brio-cnndm-uncased-init-decoder-quantized.onnx']
 
-pegasus_checkpoint = 'Yale-LILY/brio-xsum-cased' 
-bart_checkpoint = 'Yale-LILY/brio-cnndm-uncased'
+bart_model_paths = [model_dir / 'brio-xsum-cased-encoder-quantized.onnx',
+                    model_dir / 'brio-xsum-cased-decoder-quantized.onnx', 
+                    model_dir / 'brio-xsum-cased-init-decoder-quantized.onnx']
+
+model_paths = pegasus_model_paths + bart_model_paths
+
+# If models are not in the directory, download them from S3
+if not all([path.exists() for path in model_paths]):
+    download()
+
+# Local model checkpoints
+if local:
+    pegasus_checkpoint = './models/brio-xsum-cased' 
+    bart_checkpoint = './models/brio-cnndm-uncased'
+else:
+    pegasus_checkpoint = 'Yale-LILY/brio-xsum-cased'
+    bart_checkpoint = 'Yale-LILY/brio-cnndm-uncased'
 
 start = time.time()
 print("Loading BRIO pipelines...")
-pegasus_summarizer = BrioOnnxPipeline(pegasus_checkpoint, pegasus_model_paths)
-bart_summarizer = BrioOnnxPipeline(bart_checkpoint, bart_model_paths, pegasus=False)
+pegasus_summarizer = BrioOnnxPipeline(pegasus_checkpoint, str(pegasus_model_paths))
+bart_summarizer = BrioOnnxPipeline(bart_checkpoint, str(bart_model_paths), pegasus=False)
 end = time.time()
 print(f"BRIO pipelines loaded in {end-start:.3f} seconds")
 
@@ -34,6 +52,7 @@ class DocumentRequest(BaseModel):
 
 class SummaryResponse(BaseModel):
     text: str
+    time: float
 
 class ModelName(str, Enum):
     pegasus = 'pegasus'
@@ -45,17 +64,23 @@ app = FastAPI()
 app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]
 )
+
 @app.get('/')
 def index():
     return "BRIO Summarizer"
 
 @app.post('/predict', response_model=SummaryResponse)
 async def predict(request: DocumentRequest):
+    start = time.time()
     num_tokens = len(spacy_tokenizer(request.text))
     if num_tokens < 200:
-        return SummaryResponse(text=pegasus_summarizer(request.text))
+        summary = pegasus_summarizer(request.text)
+        time_elapsed = time.time() - start
+        return SummaryResponse(text=summary,time=time_elapsed)
     else:
-        return SummaryResponse(text=bart_summarizer(request.text))
+        summary = bart_summarizer(request.text)
+        time_elapsed = time.time() - start
+        return SummaryResponse(text=summary, time=time_elapsed)
 
 @app.post('/predict/{model_name}', response_model=SummaryResponse)
 async def predict_with_model(request: DocumentRequest, model_name: ModelName):
@@ -66,5 +91,5 @@ async def predict_with_model(request: DocumentRequest, model_name: ModelName):
 
 if __name__ == '__main__':
     os.environ['KMP_DUPLICATE_LIB_OK']='True'
-    uvicorn.run('main:app', host='0.0.0.0', port=8000, reload=True)
+    uvicorn.run(app, host='0.0.0.0', port=8000)
 
