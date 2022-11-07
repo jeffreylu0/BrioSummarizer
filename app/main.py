@@ -14,20 +14,22 @@ import os
 local = False
 
 # Model paths
-model_dir = Path.cwd().parent / "models"
-pegasus_model_paths = [model_dir / 'brio-cnndm-uncased-encoder-quantized.onnx',
-                       model_dir / 'brio-cnndm-uncased-decoder-quantized.onnx', 
-                       model_dir / 'brio-cnndm-uncased-init-decoder-quantized.onnx']
+model_dir = Path.cwd() / "models"
+pegasus_model_paths = [model_dir / 'brio-xsum-cased-encoder-quantized.onnx',
+                       model_dir / 'brio-xsum-cased-decoder-quantized.onnx', 
+                       model_dir / 'brio-xsum-cased-init-decoder-quantized.onnx']
 
-bart_model_paths = [model_dir / 'brio-xsum-cased-encoder-quantized.onnx',
-                    model_dir / 'brio-xsum-cased-decoder-quantized.onnx', 
-                    model_dir / 'brio-xsum-cased-init-decoder-quantized.onnx']
+bart_model_paths = [model_dir / 'brio-cnndm-uncased-encoder-quantized.onnx',
+                    model_dir / 'brio-cnndm-uncased-decoder-quantized.onnx', 
+                    model_dir / 'brio-cnndm-uncased-init-decoder-quantized.onnx']
 
 model_paths = pegasus_model_paths + bart_model_paths
 
 # If models are not in the directory, download them from S3
 if not all([path.exists() for path in model_paths]):
+    print('Downloading models...')
     download()
+    print('Models downloaded')
 
 # Local model checkpoints
 if local:
@@ -39,8 +41,8 @@ else:
 
 start = time.time()
 print("Loading BRIO pipelines...")
-pegasus_summarizer = BrioOnnxPipeline(pegasus_checkpoint, str(pegasus_model_paths))
-bart_summarizer = BrioOnnxPipeline(bart_checkpoint, str(bart_model_paths), pegasus=False)
+pegasus_summarizer = BrioOnnxPipeline(pegasus_checkpoint, list(map(str,pegasus_model_paths)))
+bart_summarizer = BrioOnnxPipeline(bart_checkpoint, list(map(str,bart_model_paths)), pegasus=False)
 end = time.time()
 print(f"BRIO pipelines loaded in {end-start:.3f} seconds")
 
@@ -92,4 +94,5 @@ async def predict_with_model(request: DocumentRequest, model_name: ModelName):
 if __name__ == '__main__':
     os.environ['KMP_DUPLICATE_LIB_OK']='True'
     uvicorn.run(app, host='0.0.0.0', port=8000)
+    
 
