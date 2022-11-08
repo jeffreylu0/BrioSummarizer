@@ -2,10 +2,10 @@ from fastapi import FastAPI
 from starlette.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from spacy.lang.en import English
-from onnx_inference import BrioOnnxPipeline
+from .onnx_inference import BrioOnnxPipeline
 from enum import Enum
 from pathlib import Path
-from utils.download_models import download
+from .utils.download_models import download
 import uvicorn
 import time
 import os
