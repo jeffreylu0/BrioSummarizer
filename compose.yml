@@ -1,6 +1,6 @@
 services:
   summarizer:
-    image: summarizer
+    image: jeffreylu0/summarizer
     build: .
     ports:
       - "8000:8000"
@@ -9,5 +9,5 @@ services:
     platform: linux/amd64
     volumes:
       - type: bind
-        source: /Users/623257/Projects/Summarizer/models
+        source: ./models
         target: /usr/code/models

@@ -1,6 +1,4 @@
 /venv
-/testing
-/export_utils
+/extension
 /models
-/brio-cnndm-uncased
-/brio-xsum-cased
+speed_test.ipynb
