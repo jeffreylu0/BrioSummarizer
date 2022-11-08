@@ -4,7 +4,7 @@
 
     Without Docker:
     ```
-    python -m app/main.py
+    python -m app.main
     ```
 
     With Docker:
