@@ -55,6 +55,7 @@ class DocumentRequest(BaseModel):
 class SummaryResponse(BaseModel):
     text: str
     time: float
+    model: str
 
 class ModelName(str, Enum):
     pegasus = 'pegasus'
@@ -75,21 +76,30 @@ def index():
 async def predict(request: DocumentRequest):
     start = time.time()
     num_tokens = len(spacy_tokenizer(request.text))
-    if num_tokens < 200:
+    # Given shorter source document, use abstractive summarization
+    if num_tokens < 50:
         summary = pegasus_summarizer(request.text)
         time_elapsed = time.time() - start
-        return SummaryResponse(text=summary,time=time_elapsed)
+        return SummaryResponse(text=summary,time=time_elapsed, model='pegasus')
+
+    # Given longer source document, use extractive summarization
     else:
         summary = bart_summarizer(request.text)
         time_elapsed = time.time() - start
-        return SummaryResponse(text=summary, time=time_elapsed)
+        return SummaryResponse(text=summary, time=time_elapsed, model='bart')
 
+# Enumerated models for testing
 @app.post('/predict/{model_name}', response_model=SummaryResponse)
 async def predict_with_model(request: DocumentRequest, model_name: ModelName):
+    start = time.time()
     if model_name is ModelName.pegasus:
-        return SummaryResponse(text=pegasus_summarizer(request.text))
+        summary = pegasus_summarizer(request.text)
+        time_elapsed = time.time() - start
+        return SummaryResponse(text=summary, time=time_elapsed, model=model_name)
     else:
-        return SummaryResponse(text=bart_summarizer(request.text))
+        summary = bart_summarizer(request.text)
+        time_elapsed = time.time() - start
+        return SummaryResponse(text=summary, time=time_elapsed, model=model_name)
 
 if __name__ == '__main__':
     os.environ['KMP_DUPLICATE_LIB_OK']='True'
