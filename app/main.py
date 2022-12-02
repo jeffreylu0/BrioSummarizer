@@ -2,6 +2,10 @@ from fastapi import FastAPI
 from starlette.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from spacy.lang.en import English
+from transformers import (PegasusTokenizer, 
+                          BartTokenizer, 
+                          PegasusForConditionalGeneration, 
+                          BartForConditionalGeneration)
 from .onnx_inference import BrioOnnxPipeline
 from enum import Enum
 from pathlib import Path
@@ -39,13 +43,21 @@ else:
     pegasus_checkpoint = 'Yale-LILY/brio-xsum-cased'
     bart_checkpoint = 'Yale-LILY/brio-cnndm-uncased'
 
-start = time.time()
-print("Loading BRIO pipelines...")
+# Load ONNX models
+print("Loading BRIO ONNX pipelines...")
 pegasus_summarizer = BrioOnnxPipeline(pegasus_checkpoint, list(map(str,pegasus_model_paths)))
 bart_summarizer = BrioOnnxPipeline(bart_checkpoint, list(map(str,bart_model_paths)), pegasus=False)
-end = time.time()
-print(f"BRIO pipelines loaded in {end-start:.3f} seconds")
+print(f"BRIO ONNX pipelines loaded!")
 
+# Load PyTorch models (for speed test mainly)
+print("Loading BRIO PyTorch models and tokenizers...")
+pegasus_model = PegasusForConditionalGeneration.from_pretrained(pegasus_checkpoint)
+pegasus_tokenizer = PegasusTokenizer.from_pretrained(pegasus_checkpoint)
+bart_model = BartForConditionalGeneration.from_pretrained(bart_checkpoint)
+bart_tokenizer = BartTokenizer.from_pretrained(bart_checkpoint)
+print("BRIO PyTorch models and tokenizers loaded!")
+
+# Load spacy tokenizer to check number of tokens in request
 nlp = English()
 spacy_tokenizer = nlp.tokenizer
 
@@ -56,10 +68,16 @@ class SummaryResponse(BaseModel):
     text: str
     time: float
     model: str
+    framework: str
 
+# Enumerations for testing models and frameworks
 class ModelName(str, Enum):
     pegasus = 'pegasus'
     bart = 'bart'
+    
+class Framework(str, Enum):
+    pytorch = 'pytorch'
+    onnx = 'onnx'
 
 app = FastAPI()
 
@@ -80,29 +98,55 @@ async def predict(request: DocumentRequest):
     if num_tokens < 50:
         summary = pegasus_summarizer(request.text)
         time_elapsed = time.time() - start
-        return SummaryResponse(text=summary,time=time_elapsed, model='pegasus')
+        return SummaryResponse(text=summary,time=time_elapsed, model='pegasus', framework='onnx')
 
     # Given longer source document, use extractive summarization
     else:
         summary = bart_summarizer(request.text)
         time_elapsed = time.time() - start
-        return SummaryResponse(text=summary, time=time_elapsed, model='bart')
+        return SummaryResponse(text=summary, time=time_elapsed, model='bart', framework='onnx')
 
-# Enumerated models for testing
-@app.post('/predict/{model_name}', response_model=SummaryResponse)
-async def predict_with_model(request: DocumentRequest, model_name: ModelName):
-    start = time.time()
+# Enumeration for testing a specific model
+@app.post('/predict/{model_name}/{framework}', response_model=SummaryResponse)
+async def predict_with_model(request: DocumentRequest, 
+                             model_name: ModelName,
+                             framework: Framework):
+
     if model_name is ModelName.pegasus:
-        summary = pegasus_summarizer(request.text)
-        time_elapsed = time.time() - start
-        return SummaryResponse(text=summary, time=time_elapsed, model=model_name)
-    else:
-        summary = bart_summarizer(request.text)
-        time_elapsed = time.time() - start
-        return SummaryResponse(text=summary, time=time_elapsed, model=model_name)
+
+        if framework is Framework.pytorch:
+
+            start = time.time()
+            encoded_input = pegasus_tokenizer(request.text,return_tensors='pt')
+            output_tokens = pegasus_model.generate(**encoded_input)
+            summary = pegasus_tokenizer.batch_decode(output_tokens, skip_special_tokens=True)[0]
+            time_elapsed = time.time() - start
+            return SummaryResponse(text=summary, time=time_elapsed, model=model_name, framework=framework)
+
+        if framework is Framework.onnx:
+            start = time.time()
+            summary = pegasus_summarizer(request.text)
+            time_elapsed = time.time() - start
+            return SummaryResponse(text=summary, time=time_elapsed, model=model_name, framework=framework)
+
+    if model_name is ModelName.bart:
+
+        if framework is Framework.pytorch:
+            start = time.time()
+            encoded_input = bart_tokenizer(request.text,return_tensors='pt')
+            output_tokens = bart_model.generate(**encoded_input)
+            summary = bart_tokenizer.batch_decode(output_tokens, skip_special_tokens=True)[0]
+            time_elapsed = time.time() - start
+            return SummaryResponse(text=summary, time=time_elapsed, model=model_name, framework=framework)
+        
+        if framework is Framework.onnx:
+            start = time.time()
+            summary = bart_summarizer(request.text)
+            time_elapsed = time.time() - start
+            return SummaryResponse(text=summary, time=time_elapsed, model=model_name, framework=framework)           
 
 if __name__ == '__main__':
-    os.environ['KMP_DUPLICATE_LIB_OK']='True'
-    uvicorn.run(app, host='0.0.0.0', port=8000)
+    #os.environ['KMP_DUPLICATE_LIB_OK']='True'
+    uvicorn.run(app, host='0.0.0.0', port=80)
     
 
