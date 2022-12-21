@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-image="jeffreylu0/summarizer"
+image="jeffreylu0/summarizer2"
 user="ai-txg-1-user"
 
 sudo yum update
