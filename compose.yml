@@ -3,7 +3,7 @@ services:
     image: jeffreylu0/summarizer
     build: .
     ports:
-      - "8000:8000"
+      - "80:80"
     environment:
       - KMP_DUPLICATE_LIB_OK=True
     platform: linux/amd64
